@@ -11,6 +11,7 @@ import { getCommitInfo, getWorkingState } from "@utils/git"
 import fs from "fs/promises"
 import { isBinaryFile } from "isbinaryfile"
 import * as path from "path"
+import * as vscode from "vscode"
 import { HostProvider } from "@/hosts/host-provider"
 import { ShowMessageType } from "@/shared/proto/host/window"
 import { DiagnosticSeverity } from "@/shared/proto/index.cline"
@@ -41,6 +42,8 @@ export async function openMention(mention?: string): Promise<void> {
 		await HostProvider.workspace.openProblemsPanel({})
 	} else if (mention === "terminal") {
 		await HostProvider.workspace.openTerminalPanel({})
+	} else if (mention === "tabs") {
+		// No specific action needed for tabs mention
 	} else if (mention.startsWith("http")) {
 		await openExternal(mention)
 	}
@@ -83,6 +86,8 @@ export async function parseMentions(
 			return `Workspace Problems (see below for diagnostics)`
 		} else if (mention === "terminal") {
 			return `Terminal Output (see below for output)`
+		} else if (mention === "tabs") {
+			return `Open Tabs (see below for content)`
 		} else if (mention === "git-changes") {
 			return `Working directory changes (see below for details)`
 		} else if (/^[a-f0-9]{7,40}$/.test(mention)) {
@@ -290,6 +295,13 @@ export async function parseMentions(
 				// Track failed terminal mention
 				telemetryService.captureMentionFailed("terminal", "unknown", error.message)
 			}
+		} else if (mention === "tabs") {
+			try {
+				const tabsContent = await getOpenTabsContent(cwd)
+				parsedText += `\n\n<open_tabs>\n${tabsContent}\n</open_tabs>`
+			} catch (error) {
+				parsedText += `\n\n<open_tabs>\nError fetching open tabs: ${error.message}\n</open_tabs>`
+			}
 		} else if (mention === "git-changes") {
 			try {
 				const workingState = await getWorkingState(cwd)
@@ -380,6 +392,44 @@ async function getFileOrFolderContent(mentionPath: string, cwd: string): Promise
 	} catch (error) {
 		throw new Error(`Failed to access path "${mentionPath}": ${error.message}`)
 	}
+}
+
+async function getOpenTabsContent(cwd: string): Promise<string> {
+	const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs)
+	let tabsContent = "Open editor tabs:\n"
+
+	const fileContentPromises: Promise<string | undefined>[] = []
+
+	tabs.forEach((tab, index) => {
+		const isLast = index === tabs.length - 1
+		const linePrefix = isLast ? "└── " : "├── "
+
+		if (tab.input instanceof vscode.TabInputText) {
+			const filePath = tab.input.uri.fsPath
+			const relativePath = path.relative(cwd, filePath)
+			tabsContent += `${linePrefix}${relativePath}\n`
+
+			fileContentPromises.push(
+				(async () => {
+					try {
+						const isBinary = await isBinaryFile(filePath).catch(() => false)
+						if (isBinary) {
+							return undefined
+						}
+						const content = await extractTextFromFile(filePath)
+						return `<file_content path="${relativePath.toPosix()}">\n${content}\n</file_content>`
+					} catch (error) {
+						return undefined
+					}
+				})(),
+			)
+		} else {
+			tabsContent += `${linePrefix}[Non-file tab]\n`
+		}
+	})
+
+	const fileContents = (await Promise.all(fileContentPromises)).filter((content) => content)
+	return `${tabsContent}\n${fileContents.join("\n\n")}`.trim()
 }
 
 async function getWorkspaceProblems(): Promise<string> {
