@@ -85,6 +85,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 				return <span>Problems</span>
 			case ContextMenuOptionType.Terminal:
 				return <span>Terminal</span>
+			case ContextMenuOptionType.Tabs:
+				return <span>Open Tabs</span>
 			case ContextMenuOptionType.URL:
 				return <span>Paste URL to fetch contents</span>
 			case ContextMenuOptionType.NoResults:
@@ -145,6 +147,8 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 				return "warning"
 			case ContextMenuOptionType.Terminal:
 				return "terminal"
+			case ContextMenuOptionType.Tabs:
+				return "split-horizontal"
 			case ContextMenuOptionType.URL:
 				return "link"
 			case ContextMenuOptionType.Git:
@@ -251,6 +255,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 							)}
 						{(option.type === ContextMenuOptionType.Problems ||
 							option.type === ContextMenuOptionType.Terminal ||
+							option.type === ContextMenuOptionType.Tabs ||
 							((option.type === ContextMenuOptionType.File ||
 								option.type === ContextMenuOptionType.Folder ||
 								option.type === ContextMenuOptionType.Git) &&
