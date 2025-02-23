@@ -452,6 +452,8 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 						insertValue = "problems"
 					} else if (type === ContextMenuOptionType.Terminal) {
 						insertValue = "terminal"
+					} else if (type === ContextMenuOptionType.Tabs) {
+						insertValue = "tabs"
 					} else if (type === ContextMenuOptionType.Git) {
 						insertValue = value || ""
 					}
