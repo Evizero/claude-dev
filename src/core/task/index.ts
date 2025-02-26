@@ -84,6 +84,7 @@ import { showChangedFilesDiff } from "./multifile-diff"
 import { TaskState } from "./TaskState"
 import { ToolExecutor } from "./ToolExecutor"
 import { updateApiReqMsg } from "./utils"
+import { ClineHideController } from "../hide/ClineHideController"
 
 export type ToolResponse = string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>
 type UserContent = Array<Anthropic.ContentBlockParam>
@@ -115,6 +116,7 @@ export class Task {
 	private checkpointTracker?: CheckpointTracker
 	private clineIgnoreController: ClineIgnoreController
 	private toolExecutor: ToolExecutor
+	private clineHideController: ClineHideController
 
 	// Metadata tracking
 	private fileContextTracker: FileContextTracker
@@ -195,6 +197,8 @@ export class Task {
 			console.log("[DEBUG] Using built in terminal manager")
 			this.terminalManager = new TerminalManager()
 		}
+		this.clineHideController = new ClineHideController(cwd)
+		// Initialization moved to startTask/resumeTaskFromHistory
 		this.terminalManager.setShellIntegrationTimeout(shellIntegrationTimeout)
 		this.terminalManager.setTerminalReuseEnabled(terminalReuseEnabled ?? true)
 		this.terminalManager.setTerminalOutputLineLimit(terminalOutputLineLimit)
@@ -973,6 +977,12 @@ export class Task {
 			console.error("Failed to initialize ClineIgnoreController:", error)
 			// Optionally, inform the user or handle the error appropriately
 		}
+		try {
+			await this.clineHideController.initialize()
+		} catch (error) {
+			console.error("Failed to initialize ClineHideController:", error)
+			// Optionally, inform the user or handle the error appropriately
+		}
 		// conversationHistory (for API) and clineMessages (for webview) need to be in sync
 		// if the extension process were killed, then on restart the clineMessages might not be empty, so we need to set it to [] when we create a new Cline client (otherwise webview would show stale messages from previous session)
 		this.messageStateHandler.setClineMessages([])
@@ -1012,6 +1022,12 @@ export class Task {
 			await this.clineIgnoreController.initialize()
 		} catch (error) {
 			console.error("Failed to initialize ClineIgnoreController:", error)
+			// Optionally, inform the user or handle the error appropriately
+		}
+		try {
+			await this.clineHideController.initialize()
+		} catch (error) {
+			console.error("Failed to initialize ClineHideController:", error)
 			// Optionally, inform the user or handle the error appropriately
 		}
 		// UPDATE: we don't need this anymore since most tasks are now created with checkpoints enabled
@@ -1237,6 +1253,7 @@ export class Task {
 		// need to await for when we want to make sure directories/files are reverted before
 		// re-starting the task from a checkpoint
 		await this.diffViewProvider.revertChanges()
+		this.clineHideController.dispose() // Add this line
 		// Clear the notification callback when task is aborted
 		this.mcpHub.clearNotificationCallback()
 		if (this.FocusChainManager) {
@@ -1912,7 +1929,7 @@ export class Task {
 		}
 
 		/*
-		Seeing out of bounds is fine, it means that the next too call is being built up and ready to add to assistantMessageContent to present. 
+		Seeing out of bounds is fine, it means that the next too call is being built up and ready to add to assistantMessageContent to present.
 		When you see the UI inactive during this, it means that a tool is breaking without presenting any UI. For example the write_to_file tool was breaking when relpath was undefined, and for invalid relpath it never presented UI.
 		*/
 		this.taskState.presentAssistantMessageLocked = false // this needs to be placed here, if not then calling this.presentAssistantMessage below would fail (sometimes) since it's locked
@@ -2792,7 +2809,7 @@ export class Task {
 				// don't want to immediately access desktop since it would show permission popup
 				details += "(Desktop files not shown automatically. Use list_files to explore if needed.)"
 			} else {
-				const [files, didHitLimit] = await listFiles(this.cwd, true, 200)
+				const [files, didHitLimit] = await listFiles(this.cwd, true, 200, this.clineHideController)
 				const result = formatResponse.formatFilesList(this.cwd, files, didHitLimit, this.clineIgnoreController)
 				details += result
 			}
