@@ -1,9 +1,15 @@
 import { globby, Options } from "globby"
 import os from "os"
 import * as path from "path"
+import { ClineHideController } from "../../core/hide/ClineHideController"
 import { arePathsEqual } from "../../utils/path"
 
-export async function listFiles(dirPath: string, recursive: boolean, limit: number): Promise<[string[], boolean]> {
+export async function listFiles(
+	dirPath: string,
+	recursive: boolean,
+	limit: number,
+	hideController?: ClineHideController,
+): Promise<[string[], boolean]> {
 	const absolutePath = path.resolve(dirPath)
 	// Do not allow listing files in root or home directory, which cline tends to want to do when the user's prompt is vague.
 	const root = process.platform === "win32" ? path.parse(absolutePath).root : "/"
@@ -48,7 +54,15 @@ export async function listFiles(dirPath: string, recursive: boolean, limit: numb
 	}
 
 	// * globs all files in one dir, ** globs files in nested directories
-	const filePaths = recursive ? await globbyLevelByLevel(limit, options) : (await globby("*", options)).slice(0, limit)
+	let filePaths = recursive ? await globbyLevelByLevel(limit, options) : (await globby("*", options)).slice(0, limit)
+
+	// Filter out hidden files if a hideController is provided
+	if (hideController && hideController.clineHideContent) {
+		filePaths = filePaths.filter((file) => {
+			const absoluteFilePath = path.resolve(dirPath, file)
+			return hideController.shouldShow(absoluteFilePath)
+		})
+	}
 
 	return [filePaths, filePaths.length >= limit]
 }
