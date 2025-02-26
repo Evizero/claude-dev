@@ -2,6 +2,7 @@ import { arePathsEqual } from "@utils/path"
 import { globby, Options } from "globby"
 import * as os from "os"
 import * as path from "path"
+import { ClineHideController } from "../../core/hide/ClineHideController"
 
 // Constants
 const DEFAULT_IGNORE_DIRECTORIES = [
@@ -56,7 +57,12 @@ function buildIgnorePatterns(absolutePath: string): string[] {
 	return patterns.map((dir) => `**/${dir}/**`)
 }
 
-export async function listFiles(dirPath: string, recursive: boolean, limit: number): Promise<[string[], boolean]> {
+export async function listFiles(
+	dirPath: string,
+	recursive: boolean,
+	limit: number,
+	hideController?: ClineHideController,
+): Promise<[string[], boolean]> {
 	const absolutePath = path.resolve(dirPath)
 
 	// Do not allow listing files in root or home directory
@@ -75,7 +81,16 @@ export async function listFiles(dirPath: string, recursive: boolean, limit: numb
 		suppressErrors: true,
 	}
 
-	const filePaths = recursive ? await globbyLevelByLevel(limit, options) : (await globby("*", options)).slice(0, limit)
+	// * globs all files in one dir, ** globs files in nested directories
+	let filePaths = recursive ? await globbyLevelByLevel(limit, options) : (await globby("*", options)).slice(0, limit)
+
+	// Filter out hidden files if a hideController is provided
+	if (hideController && hideController.clineHideContent) {
+		filePaths = filePaths.filter((file) => {
+			const absoluteFilePath = path.resolve(dirPath, file)
+			return hideController.shouldShow(absoluteFilePath)
+		})
+	}
 
 	return [filePaths, filePaths.length >= limit]
 }
