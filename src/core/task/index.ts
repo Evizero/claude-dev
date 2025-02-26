@@ -89,6 +89,7 @@ import { getGlobalState } from "../storage/state"
 import { parseSlashCommands } from ".././slash-commands"
 import WorkspaceTracker from "../../integrations/workspace/WorkspaceTracker"
 import { McpHub } from "../../services/mcp/McpHub"
+import { ClineHideController } from "../hide/ClineHideController"
 
 export const cwd =
 	vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath).at(0) ?? path.join(os.homedir(), "Desktop") // may or may not exist but fs checking existence would immediately ask for permission which would be bad UX, need to come up with a better solution
@@ -121,6 +122,7 @@ export class Task {
 	apiConversationHistory: Anthropic.MessageParam[] = []
 	clineMessages: ClineMessage[] = []
 	private clineIgnoreController: ClineIgnoreController
+	private clineHideController: ClineHideController
 	private askResponse?: ClineAskResponse
 	private askResponseText?: string
 	private askResponseImages?: string[]
@@ -185,6 +187,10 @@ export class Task {
 		this.clineIgnoreController = new ClineIgnoreController(cwd)
 		this.clineIgnoreController.initialize().catch((error) => {
 			console.error("Failed to initialize ClineIgnoreController:", error)
+		})
+		this.clineHideController = new ClineHideController(cwd)
+		this.clineHideController.initialize().catch((error) => {
+			console.error("Failed to initialize ClineHideController:", error)
 		})
 		this.terminalManager = new TerminalManager()
 		this.urlContentFetcher = new UrlContentFetcher(context)
@@ -1047,6 +1053,7 @@ export class Task {
 		await this.browserSession.dispose()
 		this.clineIgnoreController.dispose()
 		this.fileContextTracker.dispose()
+		this.clineHideController.dispose() // Add this line
 		await this.diffViewProvider.revertChanges() // need to await for when we want to make sure directories/files are reverted before re-starting the task from a checkpoint
 	}
 
@@ -3187,7 +3194,7 @@ export class Task {
 		}
 
 		/*
-		Seeing out of bounds is fine, it means that the next too call is being built up and ready to add to assistantMessageContent to present. 
+		Seeing out of bounds is fine, it means that the next too call is being built up and ready to add to assistantMessageContent to present.
 		When you see the UI inactive during this, it means that a tool is breaking without presenting any UI. For example the write_to_file tool was breaking when relpath was undefined, and for invalid relpath it never presented UI.
 		*/
 		this.presentAssistantMessageLocked = false // this needs to be placed here, if not then calling this.presentAssistantMessage below would fail (sometimes) since it's locked
@@ -3800,7 +3807,7 @@ export class Task {
 				// don't want to immediately access desktop since it would show permission popup
 				details += "(Desktop files not shown automatically. Use list_files to explore if needed.)"
 			} else {
-				const [files, didHitLimit] = await listFiles(cwd, true, 200)
+				const [files, didHitLimit] = await listFiles(cwd, true, 200, this.clineHideController)
 				const result = formatResponse.formatFilesList(cwd, files, didHitLimit, this.clineIgnoreController)
 				details += result
 			}
