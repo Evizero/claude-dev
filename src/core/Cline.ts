@@ -53,6 +53,7 @@ import { arePathsEqual, getReadablePath } from "../utils/path"
 import { fixModelHtmlEscaping, removeInvalidChars } from "../utils/string"
 import { AssistantMessageContent, parseAssistantMessage, ToolParamName, ToolUseName } from "./assistant-message"
 import { constructNewFileContent } from "./assistant-message/diff"
+import { ClineHideController } from "./hide/ClineHideController"
 import { ClineIgnoreController, LOCK_TEXT_SYMBOL } from "./ignore/ClineIgnoreController"
 import { parseMentions } from "./mentions"
 import { formatResponse } from "./prompts/responses"
@@ -81,6 +82,7 @@ export class Cline {
 	apiConversationHistory: Anthropic.MessageParam[] = []
 	clineMessages: ClineMessage[] = []
 	private clineIgnoreController: ClineIgnoreController
+	private clineHideController: ClineHideController
 	private askResponse?: ClineAskResponse
 	private askResponseText?: string
 	private askResponseImages?: string[]
@@ -127,6 +129,10 @@ export class Cline {
 		this.clineIgnoreController = new ClineIgnoreController(cwd)
 		this.clineIgnoreController.initialize().catch((error) => {
 			console.error("Failed to initialize ClineIgnoreController:", error)
+		})
+		this.clineHideController = new ClineHideController(cwd)
+		this.clineHideController.initialize().catch((error) => {
+			console.error("Failed to initialize ClineHideController:", error)
 		})
 		this.providerRef = new WeakRef(provider)
 		this.api = buildApiHandler(apiConfiguration)
@@ -1071,6 +1077,7 @@ export class Cline {
 		this.urlContentFetcher.closeBrowser()
 		this.browserSession.closeBrowser()
 		this.clineIgnoreController.dispose()
+		this.clineHideController.dispose() // Add this line
 		await this.diffViewProvider.revertChanges() // need to await for when we want to make sure directories/files are reverted before re-starting the task from a checkpoint
 	}
 
@@ -3498,7 +3505,7 @@ export class Cline {
 				// don't want to immediately access desktop since it would show permission popup
 				details += "(Desktop files not shown automatically. Use list_files to explore if needed.)"
 			} else {
-				const [files, didHitLimit] = await listFiles(cwd, true, 200)
+				const [files, didHitLimit] = await listFiles(cwd, true, 200, this.clineHideController)
 				const result = formatResponse.formatFilesList(cwd, files, didHitLimit, this.clineIgnoreController)
 				details += result
 			}
