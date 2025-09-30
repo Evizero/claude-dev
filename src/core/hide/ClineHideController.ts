@@ -1,8 +1,8 @@
-import path from "path"
-import { fileExistsAtPath } from "../../utils/fs"
+import chokidar, { FSWatcher } from "chokidar"
 import fs from "fs/promises"
 import ignore, { Ignore } from "ignore"
-import * as vscode from "vscode"
+import path from "path"
+import { fileExistsAtPath } from "../../utils/fs"
 
 /**
  * Controls visibility of files in listings by applying hide patterns.
@@ -12,22 +12,22 @@ import * as vscode from "vscode"
 export class ClineHideController {
 	private cwd: string
 	private hideInstance: Ignore
-	private disposables: vscode.Disposable[] = []
+	private fileWatcher?: FSWatcher
 	clineHideContent: string | undefined
 
 	constructor(cwd: string) {
 		this.cwd = cwd
 		this.hideInstance = ignore()
 		this.clineHideContent = undefined
-		// Set up file watcher for .clinehide
-		this.setupFileWatcher()
 	}
 
 	/**
-	 * Initialize the controller by loading custom patterns
+	 * Initialize the controller by loading custom patterns and setting up file watcher
 	 * Must be called after construction and before using the controller
 	 */
 	async initialize(): Promise<void> {
+		// Set up file watcher for .clinehide
+		this.setupFileWatcher()
 		await this.loadClineHide()
 	}
 
@@ -35,24 +35,35 @@ export class ClineHideController {
 	 * Set up the file watcher for .clinehide changes
 	 */
 	private setupFileWatcher(): void {
-		const clinehidePattern = new vscode.RelativePattern(this.cwd, ".clinehide")
-		const fileWatcher = vscode.workspace.createFileSystemWatcher(clinehidePattern)
+		const hidePath = path.join(this.cwd, ".clinehide")
 
-		// Watch for changes and updates
-		this.disposables.push(
-			fileWatcher.onDidChange(() => {
-				this.loadClineHide()
-			}),
-			fileWatcher.onDidCreate(() => {
-				this.loadClineHide()
-			}),
-			fileWatcher.onDidDelete(() => {
-				this.loadClineHide()
-			}),
-		)
+		this.fileWatcher = chokidar.watch(hidePath, {
+			persistent: true, // Keep the process running as long as files are being watched
+			ignoreInitial: true, // Don't fire 'add' events when discovering the file initially
+			awaitWriteFinish: {
+				// Wait for writes to finish before emitting events (handles chunked writes)
+				stabilityThreshold: 100, // Wait 100ms for file size to remain constant
+				pollInterval: 100, // Check file size every 100ms while waiting for stability
+			},
+			atomic: true, // Handle atomic writes where editors write to a temp file then rename
+		})
 
-		// Add fileWatcher itself to disposables
-		this.disposables.push(fileWatcher)
+		// Watch for file changes, creation, and deletion
+		this.fileWatcher.on("change", () => {
+			this.loadClineHide()
+		})
+
+		this.fileWatcher.on("add", () => {
+			this.loadClineHide()
+		})
+
+		this.fileWatcher.on("unlink", () => {
+			this.loadClineHide()
+		})
+
+		this.fileWatcher.on("error", (error) => {
+			console.error("Error watching .clinehide file:", error)
+		})
 	}
 
 	/**
@@ -124,8 +135,10 @@ export class ClineHideController {
 	/**
 	 * Clean up resources when the controller is no longer needed
 	 */
-	dispose(): void {
-		this.disposables.forEach((d) => d.dispose())
-		this.disposables = []
+	async dispose(): Promise<void> {
+		if (this.fileWatcher) {
+			await this.fileWatcher.close()
+			this.fileWatcher = undefined
+		}
 	}
 }
